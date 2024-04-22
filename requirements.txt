@@ -10,3 +10,4 @@ wechatpy
 cryptography
 redis==3.3.6
 PyMySQL==1.1.0
+ujson==5.9.0
