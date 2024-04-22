@@ -12,9 +12,14 @@ from common import const
 from common import functions
 from config import channel_conf
 from config import channel_conf_val
+import config
 from channel.channel import Channel
 from urllib import request as url_request
 from channel.feishu.store import MemoryStore
+
+from libs import torndb
+import db
+import redis
 
 class FeiShuChannel(Channel):
     def __init__(self):
@@ -29,9 +34,12 @@ class FeiShuChannel(Channel):
         self.memory_store = MemoryStore()
 
     def startup(self):
+        self.db = db.mysql = torndb.Connection(**config.conf().get("db").get("mysql"))
+        pool = redis.Connection(**config.conf().get("db").get("redis"))
+        self.redis = db.redis = redis.Redis(connection_pool=pool)
         http_app.run(host='0.0.0.0', port=channel_conf(
             const.FEISHU).get('port'))
-        
+
     def get_tenant_access_token(self):
         url = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal/"
         headers = {
@@ -65,7 +73,7 @@ class FeiShuChannel(Channel):
 
         url = "https://open.feishu.cn/open-apis/im/v1/messages"
         params = {"receive_id_type": receive_type}
-        
+
         # text = at_id and "<at user_id=\"%s\">%s</at>" % (
         #     at_id, answer.lstrip()) or answer.lstrip()
         text = answer.lstrip()
@@ -95,17 +103,17 @@ class FeiShuChannel(Channel):
         messageId = msg["message_id"]
         chat_type = msg["chat_type"]
         sender_id = event["sender"]["sender_id"]["open_id"]
-        
+
         prompt = json.loads(msg["content"])["text"]
         prompt = prompt.replace("@_user_1", "")
-        
+
         #重复
         r, v = self.memory_store.get(messageId)
         if v:
             return {'ret': 200}
-        
+
         self.memory_store.set(messageId, True)
-        
+
         # 非文本不处理
         message_type = msg["message_type"]
         if message_type != "text":
@@ -182,4 +190,3 @@ def chat():
     elif headers.get("event_type", None) == "im.message.receive_v1":  # 事件回调
         return feishu.handle(obj)
     return {'ret': 202}
-    

@@ -12,8 +12,12 @@ from common import const
 from common import functions
 from config import channel_conf
 from config import channel_conf_val
+import config
 from channel.channel import Channel
 
+from libs import torndb
+import db
+import redis
 
 class DingTalkHandler():
     def __init__(self, config):
@@ -52,25 +56,25 @@ class DingTalkHandler():
         data = json.loads(r.content)
         access_token = data['accessToken']
         expire_in = data['expireIn']
-        
+
         self.access_token = access_token
         self.expire_at = int(expire_in) + time.time()
 
         return self.access_token
-    
+
     def get_token(self):
         if self.access_token is None or self.expire_at <= time.time():
             self.get_token_internal()
-        
+
         return self.access_token
-    
+
     def get_post_url(self, data):
         type = data['conversationType']
         if type == "1":
             return f"https://api.dingtalk.com/v1.0/robot/oToMessages/batchSend"
         else:
             return f"https://api.dingtalk.com/v1.0/robot/groupMessages/send"
-    
+
     def build_response(self, reply, data):
         type = data['conversationType']
         if type == "1":
@@ -95,7 +99,7 @@ class DingTalkHandler():
             resp = {
                 "msgKey": "sampleMarkdown",
                 "msgParam": json.dumps({
-                    "title": "IMAGE @" + nick + " ", 
+                    "title": "IMAGE @" + nick + " ",
                     "text": images + " \n " + "@" + nick
                 }),
                 "robotCode": robotCode,
@@ -111,7 +115,7 @@ class DingTalkHandler():
                 "userIds": [staffid]
             }
         return resp
-    
+
     def build_group_response(self, reply, data):
         conversation_id = data['conversationId']
         prompt = data['text']['content']
@@ -129,7 +133,7 @@ class DingTalkHandler():
             resp = {
                 "msgKey": "sampleMarkdown",
                 "msgParam": json.dumps({
-                    "title": "IMAGE @" + nick + " ", 
+                    "title": "IMAGE @" + nick + " ",
                     "text": images + " \n " + "@" + nick
                 }),
                 "robotCode": robot_code,
@@ -151,14 +155,14 @@ class DingTalkHandler():
                 "openConversationId": conversation_id,
                 "at": {
                     "atUserIds": [
-                       staffid 
+                       staffid
                     ],
                     "isAtAll": False
                 }
             }
         return resp
-    
-    
+
+
     def build_webhook_response(self, reply, data):
         conversation_id = data['conversationId']
         prompt = data['text']['content']
@@ -176,7 +180,7 @@ class DingTalkHandler():
             resp = {
                 "msgtype": "markdown",
                 "markdown": {
-                    "title": "IMAGE @" + nick + " ", 
+                    "title": "IMAGE @" + nick + " ",
                     "text": images + " \n " + "@" + nick
                 },
                 "at": {
@@ -194,13 +198,13 @@ class DingTalkHandler():
                 },
                 "at": {
                     "atUserIds": [
-                       staffid 
+                       staffid
                     ],
                     "isAtAll": False
                 }
             }
         return resp
-    
+
     def chat(self, channel, data):
         reply = channel.handle(data)
         type = data['conversationType']
@@ -211,11 +215,11 @@ class DingTalkHandler():
             # group的不清楚怎么@，先用webhook调用
             reply_json = self.build_webhook_response(reply, data)
             self.notify_dingtalk_webhook(reply_json)
-        
+
 
     def notify_dingtalk(self, data, reply_json):
         headers = {
-            'content-type': 'application/json', 
+            'content-type': 'application/json',
             'x-acs-dingtalk-access-token': self.get_token()
         }
 
@@ -233,6 +237,9 @@ class DingTalkChannel(Channel):
         log.info("[DingTalk] started.")
 
     def startup(self):
+        self.db = db.mysql = torndb.Connection(**config.conf().get("db").get("mysql"))
+        pool = redis.Connection(**config.conf().get("db").get("redis"))
+        self.redis = db.redis = redis.Redis(connection_pool=pool)
         http_app.run(host='0.0.0.0', port=channel_conf(const.DINGTALK).get('port'))
 
     def handle(self, data):
@@ -252,7 +259,7 @@ class DingTalkChannel(Channel):
             context['from_user_id'] = str(id)
             reply = super().build_reply_content(prompt, context)
         return reply
-         
+
 
 dd = DingTalkChannel()
 handlers = dict()
@@ -287,6 +294,5 @@ def chat():
             return {'ret': 203}
         handler.chat(dd, data)
         return {'ret': 200}
-    
-    return {'ret': 201}
 
+    return {'ret': 201}

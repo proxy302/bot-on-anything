@@ -103,5 +103,17 @@
   "common": {
     "clear_memory_commands": ["#清除记忆"],
     "certificate_file": "xxx"
+  },
+  "db": {
+    "mysql": {
+        "host": "localhost",
+        "database": "gpt302",
+        "user": "root",
+        "password": "123456"
+    },
+    "redis": {
+        "host": "localhost",
+        "port": 6379
+    }
   }
 }
