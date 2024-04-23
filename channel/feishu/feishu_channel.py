@@ -21,16 +21,10 @@ from libs import torndb
 import db
 import redis
 
+from db_models import robot_mapping
+
 class FeiShuChannel(Channel):
     def __init__(self):
-        self.app_id = channel_conf(
-            const.FEISHU).get('app_id')
-        self.app_secret = channel_conf(
-            const.FEISHU).get('app_secret')
-        self.verification_token = channel_conf(
-            const.FEISHU).get('verification_token')
-        log.info("[FeiShu] app_id={}, app_secret={} verification_token={}".format(
-            self.app_id, self.app_secret, self.verification_token))
         self.memory_store = MemoryStore()
 
     def startup(self):
@@ -40,14 +34,14 @@ class FeiShuChannel(Channel):
         http_app.run(host='0.0.0.0', port=channel_conf(
             const.FEISHU).get('port'))
 
-    def get_tenant_access_token(self):
+    def get_tenant_access_token(self, app_id, app_secret):
         url = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal/"
         headers = {
             "Content-Type": "application/json"
         }
         req_body = {
-            "app_id": self.app_id,
-            "app_secret": self.app_secret
+            "app_id": app_id,
+            "app_secret": app_secret
         }
 
         data = bytes(json.dumps(req_body), encoding='utf8')
@@ -97,7 +91,7 @@ class FeiShuChannel(Channel):
         )
         log.info("notify_feishu.response.content = {}", response.content)
 
-    def handle(self, message):
+    def handle(self, message, rm):
         event = message["event"]
         msg = event["message"]
         messageId = msg["message_id"]
@@ -132,7 +126,7 @@ class FeiShuChannel(Channel):
             at_id = None
 
         # 调用发消息 API 之前，先要获取 API 调用凭证：tenant_access_token
-        access_token = self.get_tenant_access_token()
+        access_token = self.get_tenant_access_token(rm['feishu_app_id'], rm['feishu_app_secret'])
         if access_token == "":
             log.error("send message access_token is empty")
             return {'ret': 204}
@@ -167,7 +161,8 @@ feishu = FeiShuChannel()
 http_app = Flask(__name__,)
 
 
-@http_app.route("/", methods=['POST'])
+
+@http_app.route("/", methods=["POST"])
 def chat():
     # log.info("[FeiShu] chat_headers={}".format(str(request.headers)))
     log.info("[FeiShu] chat={}".format(str(request.data)))
@@ -175,11 +170,9 @@ def chat():
     if not obj:
         return {'ret': 201}
     # 校验 verification token 是否匹配，token 不匹配说明该回调并非来自开发平台
-    headers = obj.get("header")
-    if not headers:
-        return {'ret': 201}
-    token = headers.get("token", "")
-    if token != feishu.verification_token:
+    token = obj.get("token", "")
+    rm = robot_mapping.get_robot_mapping_by_feishu_token(token)
+    if not rm:
         log.error("verification token not match, token = {}", token)
         return {'ret': 201}
 
@@ -187,6 +180,6 @@ def chat():
     t = obj.get("type", "")
     if "url_verification" == t:  # 验证请求 URL 是否有效
         return feishu.handle_request_url_verify(obj)
-    elif headers.get("event_type", None) == "im.message.receive_v1":  # 事件回调
-        return feishu.handle(obj)
+    elif obj.get("event_type", None) == "im.message.receive_v1":  # 事件回调
+        return feishu.handle(obj, rm)
     return {'ret': 202}
