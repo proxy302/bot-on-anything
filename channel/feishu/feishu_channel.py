@@ -170,16 +170,28 @@ def chat():
     if not obj:
         return {'ret': 201}
     # 校验 verification token 是否匹配，token 不匹配说明该回调并非来自开发平台
+    # 分2种情况
+    # 1. 带token的是鉴权接口webhook
+    # 2. token 在header 的是消息的webhook
     token = obj.get("token", "")
-    rm = robot_mapping.get_robot_mapping_by_feishu_token(token)
-    if not rm:
-        log.error("verification token not match, token = {}", token)
-        return {'ret': 201}
-
-    # 根据 type 处理不同类型事件
-    t = obj.get("type", "")
-    if "url_verification" == t:  # 验证请求 URL 是否有效
-        return feishu.handle_request_url_verify(obj)
-    elif obj.get("event_type", None) == "im.message.receive_v1":  # 事件回调
-        return feishu.handle(obj, rm)
+    if token != "":
+        rm = robot_mapping.get_robot_mapping_by_feishu_token(token)
+        if not rm:
+            log.error("verification token not match, token = {}", token)
+            return {'ret': 201}
+        # 根据 type 处理不同类型事件
+        t = obj.get("type", "")
+        if "url_verification" == t:  # 验证请求 URL 是否有效
+            return feishu.handle_request_url_verify(obj)
+    else:
+        headers = obj.get("header")
+        if not headers:
+            return {'ret': 201}
+        token = headers.get("token", "")
+        rm = robot_mapping.get_robot_mapping_by_feishu_token(token)
+        if not rm:
+            log.error("verification token not match, token = {}", token)
+            return {'ret': 201}
+        if headers.get("event_type", None) == "im.message.receive_v1":  # 事件回调
+            return feishu.handle(obj, rm)
     return {'ret': 202}
